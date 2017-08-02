@@ -14,47 +14,37 @@ import sys
 import shutil
 import uuid
 
+from collections import defaultdict
 from ConfigParser import (
     RawConfigParser,
 )
 
 from mozvcssync import pulse
 from mozvcssync.gitutil import GitCommand
+from projectutil import Command
 
 
 rev_re = re.compile("revision=(?P<rev>[0-9a-f]{40})")
-logger = logging.getLogger('mozvcssync.servo')
+logger = logging.getLogger('wpt-sync')
 
 
-def run_pulse_listener(c):
+def on_github_message(body, message, config):
+    logger.warn('Look, an event:' + body['event'])
+    logger.warn('from:' + body['_meta']['routing_key'])
+    downstream(c, body['payload']['pull_request']['number'])
+    message.ack()
+
+
+def run_pulse_listener(config):
     """Trigger events from Pulse messages."""
-    consumer = pulse.get_consumer(userid=c['pulse_userid'],
-                                  password=c['pulse_password'],
-                                  hostname=c['pulse_host'],
-                                  port=c['pulse_port'],
-                                  ssl=c['pulse_ssl'],
-                                  github_exchange=c['pulse_github_exchange'],
-                                  github_queue=c['pulse_github_queue'],
-                                  github_routing_key=c['pulse_github_routing_key'])
-
-    def on_github_message(body, message):
-        wpt_dir = os.path.join('testing', 'web-platform', 'tests')
-        logger.warn('Look, an event:' + body['event'])
-        logger.warn('from:' + body['_meta']['routing_key'])
-        pr_id = body['payload']['pull_request']['number']
-        # assuming:
-        # - git cinnabar, checkout of the gecko repo,
-        #     remotes configured, mercurial python lib
-        get_pr(c['wpt_source_url'], c['path_to_wpt'], pr_id)
-        gecko_pr_branch = create_fresh_branch(c['path_to_gecko'])
-        copy_changes(c['path_to_wpt'],
-                     os.path.join(c['path_to_gecko'], wpt_dir))
-        _mach('wpt-manifest-update', c['path_to_gecko'])
-        is_changed = commit_changes(c['path_to_gecko'], wpt_dir,
-                                    "PR " + pr_id)
-        if is_changed:
-            push_to_try(c['path_to_gecko'], gecko_pr_branch)
-        message.ack()
+    consumer = pulse.get_consumer(userid=config['pulse_userid'],
+                                  password=config['pulse_password'],
+                                  hostname=config['pulse_host'],
+                                  port=config['pulse_port'],
+                                  ssl=config['pulse_ssl'],
+                                  github_exchange=config['pulse_github_exchange'],
+                                  github_queue=config['pulse_github_queue'],
+                                  github_routing_key=config['pulse_github_routing_key'])
 
     consumer.github_callbacks.append(on_github_message)
 
@@ -105,8 +95,30 @@ def pulse_daemon():
     run_pulse_listener(config)
 
 
+def downstream(c, pr_id):
+    """ gh to mozilla
+
+    :param c: config
+    :param pr_id: github PR number
+    """
+    # assuming:
+    # - git cinnabar, checkout of the gecko repo,
+    #     remotes configured, mercurial python lib
+    wpt_dir = os.path.join('testing', 'web-platform', 'tests')
+    get_pr(c['wpt_source_url'], c['path_to_wpt'], pr_id)
+    gecko_pr_branch = create_fresh_branch(c['path_to_gecko'])
+    copy_changes(c['path_to_wpt'],
+                 os.path.join(c['path_to_gecko'], wpt_dir))
+    mach = Command('mach', c['path_to_gecko'])
+    mach.get('wpt-manifest-update')
+    is_changed = commit_changes(c['path_to_gecko'], wpt_dir,
+                                "PR " + pr_id)
+    if is_changed:
+        push_to_try(c['path_to_gecko'], gecko_pr_branch)
+
+
 def get_pr(git_source_url, git_repo_path, pr_id, ref='master'):
-    """ Pull shallow repo and checkout given pr """
+    """ Pull repo and checkout given pr """
     git = GitCommand(os.path.abspath(git_repo_path))
     if not os.path.exists(git_repo_path):
         git.cmd(b'init', git_repo_path)
@@ -177,7 +189,7 @@ def push_to_try(git_repo_path, branch):
     ]
     results_url = None
     git = GitCommand(os.path.abspath(git_repo_path))
-    # TODO specify relevant platforms
+
     try_message = ("try: -b do -p linux,linux64 -u web-platform-tests-1,web-platform-tests-e10s-1 "
                    "-t none --artifact --try-test-paths ")
     try_message += "".join(["web-platform-tests:" + t for t in affected_tests])
@@ -194,8 +206,10 @@ def push_to_try(git_repo_path, branch):
     return results_url
 
 
-def _mach(name, path_to_gecko, options=None):
-    command = [os.path.join(path_to_gecko, b"mach"), name]
-    if options:
-        command.extend(options)
-    subprocess.check_call(command, cwd=path_to_gecko)
+# TODO local testing; remove
+if __name__ == '__main__':
+    configure_stdout()
+    c = load_config("./wpt-sync/sync/example-config.ini")
+    t = get_affected_tests("/Users/mfrydrychowicz/dev/web-platform-tests", "a94ae52e4e21d6240fe1bd1b34c27e82ae159109")
+    print(t)
+    print(construct_try_message(t))
