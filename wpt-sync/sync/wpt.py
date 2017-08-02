@@ -18,8 +18,8 @@ from ConfigParser import (
     RawConfigParser,
 )
 
-from . import pulse
-from .gitutil import GitCommand
+from mozvcssync import pulse
+from mozvcssync.gitutil import GitCommand
 
 
 rev_re = re.compile("revision=(?P<rev>[0-9a-f]{40})")
@@ -50,7 +50,7 @@ def run_pulse_listener(c):
         copy_changes(c['path_to_wpt'],
                      os.path.join(c['path_to_gecko'], wpt_dir))
         _mach('wpt-manifest-update', c['path_to_gecko'])
-        is_changed = commit_changes(c['path_to_gecko'], wpt_dir
+        is_changed = commit_changes(c['path_to_gecko'], wpt_dir,
                                     "PR " + pr_id)
         if is_changed:
             push_to_try(c['path_to_gecko'], gecko_pr_branch)
