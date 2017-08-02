@@ -180,6 +180,45 @@ def commit_changes(git_repo_path, path, message):
     return True
 
 
+def get_affected_tests(path_to_wpt, revish=None):
+    wpt = Command("wpt", path_to_wpt)
+    cmd = ["tests-affected", "--show-type", "--new"]
+    if revish:
+        cmd.append(revish)
+    s = wpt.get(*cmd)
+    tests_by_type = defaultdict(set)
+    for item in s.strip().split("\n"):
+        pair = item.strip().split("\t")
+        assert len(pair) == 2
+        tests_by_type[pair[1]].add(pair[0])
+    return tests_by_type
+
+
+def construct_try_message(tests_by_type):
+    # TODO specify relevant platforms
+    try_message = ("try: -b do -p linux,linux64 -u {test_jobs} "
+                   "-t none --artifact --try-test-paths {prefixed_paths}")
+    test_type_suite = {
+        "testharness": "web-platform-tests",
+        "reftest": "web-platform-tests-reftests",
+        "wdspec": "web-platform-tests-wdspec",
+    }
+    test_data = {
+        "test_jobs": [],
+        "prefixed_paths": [],
+    }
+    for test_type, paths in tests_by_type.iteritems():
+        suite = test_type_suite[test_type]
+        if len(paths):
+            test_data["test_jobs"].append(suite)
+            test_data["test_jobs"].append(suite + "-e10s")
+        for p in paths:
+            test_data["prefixed_paths"].append(suite + ":" + p)
+    test_data["test_jobs"] = ",".join(test_data["test_jobs"])
+    test_data["prefixed_paths"] = ",".join(test_data["prefixed_paths"])
+    return try_message.format(**test_data)
+
+
 def push_to_try(git_repo_path, branch):
     # TODO determine affected tests (use new wpt command in upstream repo)
     affected_tests = [
