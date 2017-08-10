@@ -7,6 +7,6 @@ pip install -e .
 cd ~
 git clone https://github.com/glandium/git-cinnabar.git cinnabar
 cd cinnabar
-export $PATH=$PWD:$PATH
+export PATH=$PWD:$PATH
 git cinnabar download
 cd $SYNC_DIR
