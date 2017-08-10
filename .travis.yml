@@ -7,4 +7,4 @@ python:
 # command to install dependencies
 install: "cd wpt-sync; pip install -r requirements.txt; pip install -e ."
 # command to run tests
-script: pytest wpt-sync/test
+script: pytest test/
