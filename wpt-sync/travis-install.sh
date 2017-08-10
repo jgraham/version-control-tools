@@ -1,7 +1,7 @@
 #! /bin/bash
 set -ex
 
-$SYNC_DIR=$PWD
+SYNC_DIR=$PWD
 pip install -r requirements.txt
 pip install -e .
 cd ~
